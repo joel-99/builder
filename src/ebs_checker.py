@@ -33,6 +33,9 @@ def save_contents(fname, fn, *args, **kwargs):
     pickle.dump(results, open(fname, 'wb'))
     return results
 
+def load_contents(fname):
+    return pickle.load(open(fname, 'rb'))
+
 def me():
     return "i-01bf2487b60e091b8" # basebox--2017-11-01
 
@@ -52,15 +55,17 @@ def vlist():
 def volume_attached(volid):
     ec2 = boto3.resource('ec2').Instance(me())    
     attached_volumes = map(lambda dev: dev['Ebs']['VolumeId'], ec2.block_device_mappings)
+    print 'attached:',attached_volumes
     return volid in attached_volumes
 
-
 def detach_volume(vol):
-    vol = boto3.resource('ec2').Volume(vol['VolumeId'])
-    return vol.detach_from_instance(
-        Device='/dev/xvdh',
-        InstanceId=me(),
-    )
+    if volume_attached(vol['VolumeId']):
+        vol = boto3.resource('ec2').Volume(vol['VolumeId'])
+        return vol.detach_from_instance(
+            Device='/dev/xvdh',
+            InstanceId=me(),
+        )
+    print "volume not attached, not de-taching"
         
 
 def attach_volume(vol):
@@ -83,24 +88,6 @@ def sudo(*args, **kwargs):
     res = _sudo(*args, **kwargs)
     return res.return_code, res
 
-def mounted(dev):
-    cmd = "grep '/mnt/vol' /proc/mounts"
-    rc, stdout = sudo(cmd)
-    return rc == 0
-
-def mount_volume(dev):
-    mp = "/mnt/vol"
-    if mounted(dev):
-        return mp
-    print 'not mounted'
-    sudo("mkdir -p /mnt/vol && mount %s -t auto /mnt/vol" % dev)
-    ensure(mounted(dev), "failed to mount %s" % dev)
-    print 'mounted'
-    return mp
-
-def unmount_volume():
-    sudo("umount /mnt/vol")
-        
 def scan_mountpoint(mountpoint):
     rc, stdout = sudo("cd %s && find ." % mountpoint)
     ensure(rc == 0, "failed to scan")
@@ -109,21 +96,17 @@ def scan_mountpoint(mountpoint):
 def scanned_list():
     return filter(lambda fname: fname.endswith('.scan'), os.listdir('.'))
 
-def spy(form):
-    print(form)
-    return form
-
-def has_partitions(vol):
-    rc, stdout = sudo("lsblk -o NAME,FSTYPE,SIZE /dev/xvdh")
-    # NAME    FSTYPE SIZE
-    # xvda             8G
-    # └─xvda1 ext4     8G
-    return len(stdout.splitlines()) > 1
-
 
 #
 #
 #
+
+@task()
+def print_scan():
+    for scan in scanned_list():
+        vol = scan.split('.')[0]
+        fname = "%s.txt" % vol
+        open(fname, 'w').write(load_contents(scan))
 
 @task()
 def scan():
@@ -133,21 +116,30 @@ def scan():
     for i, vol in enumerate(volumes):
         volid = vol['VolumeId']
         print
-        print i,volid
+        print i+1,volid
         if "%s.scan" % volid in scanned_list():
             print "scan found, skipping"
+            detach_volume(vol)
             continue
 
         device = attach_volume(vol)
         with core.stack_conn(stackname()):
-            if has_partitions(vol):
-                mountpoint = mount_volume(device)
-                scanlist = save_contents('%s.scan' % volid, scan_mountpoint, mountpoint)
-                unmount_volume(vol)
-            else:
-                print "no partitions found"
-
+            #if has_partitions(vol):
+            #    mountpoint = mount_volume(device)
+            #    scanlist = save_contents('%s.scan' % volid, scan_mountpoint, mountpoint)
+            #    unmount_volume(vol)
+            #else:
+            #    print "no partitions found"
+            print '---'
+            print 'any key to scan'
+            raw_input()
+            mountpoint = "/mnt"
+            print 'scanning'
+            scanlist = save_contents('%s.scan' % volid, scan_mountpoint, mountpoint)
+            print 'any key to continue to continue to next volume'
+            raw_input()
+            
         if volume_attached(volid):
-            print 'detach:',detach_volume(vol)
-            time.sleep(10)
-
+            print 'detaching ... ',detach_volume(vol)
+            print 'any key once detached'
+            raw_input()
