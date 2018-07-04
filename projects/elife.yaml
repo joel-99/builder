@@ -284,6 +284,9 @@ lax:
     intdomain: False
     repo: https://github.com/elifesciences/lax.git
     formula-repo: https://github.com/elifesciences/lax-formula
+    formula-dependencies:
+        - https://github.com/elifesciences/builder-base-formula
+        - https://github.com/elifesciences/elife-reporting-formula
     aws:
         ec2:
             ami: ami-92002785 # Ubuntu 14.04, deprecated
@@ -2042,3 +2045,21 @@ fastly-logs:
             "{instance}-elife-fastly":
                 project: elife-fastly
     aws-alt: {}
+    
+
+gitter:
+    formula-repo: https://github.com/elifesciences/basebox-formula
+    aws:
+        type: t2.medium
+        domain: false
+        intdomain: False
+        ext:
+            size: 50 # GB
+            device: /dev/sdh
+            type: gp2
+        ec2: 
+            ami: ami-1d4e7a66 # 16.04
+        ports:
+            - 22
+    # will not work, excluding it entirely does
+    # aws-alt: {}
