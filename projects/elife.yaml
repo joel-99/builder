@@ -136,6 +136,7 @@ defaults:
             subdomains: []
             subdomains-without-dns: []
             default-ttl: 3600 # Fastly default, in seconds
+            shield: false
             dns:
                 cname: u2.shared.global.fastly.net
                 a:
@@ -455,37 +456,9 @@ journal:
                 protocol:
                     - https
                     - http
-            cloudfront:
-                subdomains:
-                    - "{instance}--cdn-journal"
-                headers:
-                    - X-Requested-With
-                    - Host
-                cookies:
-                    - journal
-                errors: 
-                    # TODO: this is not being deployed to, it's empty
-                    domain: end2end-elife-error-pages.s3-website-us-east-1.amazonaws.com
-                    pattern: "???.html"
-                    codes:
-                        # ELB with no active instances
-                        503: "/5xx.html"
-                    protocol: http
-                origins:
-                    CloudFrontCDNOrigin:
-                        hostname: end2end--journal.elifesciences.org
-                    LogInOrigin:
-                        hostname: end2end--journal.elifesciences.org
-                        pattern: /log-in
-                        headers:
-                            - X-Requested-With
-                            - Host
-                            - Referer
-                        cookies:
-                            - journal
             fastly:
                 subdomains:
-                    - "{instance}--fastly-journal"
+                    - "{instance}--cdn-journal"
                 healthcheck:
                     path: /ping-fastly
                     check-interval: 10000
@@ -497,7 +470,10 @@ journal:
                         503: "503.html"
                 vcl:
                     - "original-host"
+                    - "ping-status"
                     - "strip-non-journal-cookies"
+                    - "journal-google-scholar"
+                    - "journal-google-scholar-vary"
                 gcslogging:
                     bucket: "{instance}-elife-fastly"
                     path: "journal--{instance}/"
@@ -511,35 +487,9 @@ journal:
                 protocol:
                     - https
                     - http
-            cloudfront:
-                subdomains:
-                    - "{instance}--cdn-journal"
-                headers:
-                    - X-Requested-With
-                    - Host
-                cookies:
-                    - journal
-                errors: 
-                    domain: continuumtest-elife-error-pages.s3-website-us-east-1.amazonaws.com
-                    pattern: "???.html"
-                    codes:
-                        503: "/5xx.html"
-                    protocol: http
-                origins:
-                    CloudFrontCDNOrigin:
-                        hostname: continuumtest--journal.elifesciences.org
-                    LogInOrigin:
-                        hostname: continuumtest--journal.elifesciences.org
-                        pattern: /log-in
-                        headers:
-                            - X-Requested-With
-                            - Host
-                            - Referer
-                        cookies:
-                            - journal
             fastly:
                 subdomains:
-                    - "{instance}--fastly-journal"
+                    - "{instance}--cdn-journal"
                 healthcheck:
                     path: /ping-fastly
                     check-interval: 10000
@@ -551,7 +501,10 @@ journal:
                         503: "503.html"
                 vcl:
                     - "original-host"
+                    - "ping-status"
                     - "strip-non-journal-cookies"
+                    - "journal-google-scholar"
+                    - "journal-google-scholar-vary"
                 gcslogging:
                     bucket: "{instance}-elife-fastly"
                     path: "journal--{instance}/"
@@ -573,41 +526,22 @@ journal:
                     - http
             cloudfront:
                 subdomains:
-                    - "{instance}--cdn-journal"
+                    - "placeholder2-prod-journal" # only here to avoid rewriting the following values
                     - www
                     - elife
                     - prod
-                subdomains-without-dns:
-                    - ""
                 headers:
-                    - X-Requested-With
                     - Host
-                cookies:
-                    - journal
-                errors: 
+                errors:
                     domain: prod-elife-error-pages.s3-website-us-east-1.amazonaws.com
                     pattern: "???.html"
                     codes:
                         # ELB with no active instances
                         503: "/5xx.html"
                     protocol: http
-                origins:
-                    CloudFrontCDNOrigin:
-                        hostname: prod--journal.elifesciences.org
-                    LogInOrigin:
-                        hostname: prod--journal.elifesciences.org
-                        pattern: /log-in
-                        headers:
-                            - X-Requested-With
-                            - Host
-                            - Referer
-                        cookies:
-                            - journal
-                logging:
-                    bucket: elife-cloudfront-logs
             fastly:
                 subdomains:
-                    - "{instance}--fastly-journal"
+                    - "{instance}--cdn-journal"
                     - "placeholder-prod-journal" # only here to avoid rewriting the following values
                     - ""
                 healthcheck:
@@ -621,7 +555,10 @@ journal:
                         503: "503.html"
                 vcl:
                     - "original-host"
+                    - "ping-status"
                     - "strip-non-journal-cookies"
+                    - "journal-google-scholar"
+                    - "journal-google-scholar-vary"
                 gcslogging:
                     bucket: "{instance}-elife-fastly"
                     path: "journal--{instance}/"
@@ -769,6 +706,7 @@ elife-bot:
                 - 22
                 - 8020 # exposing FTP contents
                 - 8021 # exposing FTP contents, HTTPS
+                - 1080 # exposing mailcatcher API
             description: speeding up end2end tests
             s3:
                 "{instance}-elife-silent-corrections":
@@ -829,38 +767,38 @@ generic-cdn:
             surrogate-keys:
                 article-versioned-assets:
                     url: "^/articles/([0-9]+)/elife-([a-z-0-9]+)-v([0-9]+)\\.(.+)$"
-                    value: "articles/\\1 article/\\1 article/\\1v\\3"
+                    value: "article/\\1 article/\\1v\\3"
                     samples:
                         article-asset:
                             path: /articles/10627/elife-10627-fig1-v1.tif
-                            expected: "articles/10627 article/10627 article/10627v1"
+                            expected: "article/10627 article/10627v1"
                         article-pdf:
                             path: /articles/10627/elife-10627-v1.pdf
-                            expected: "articles/10627 article/10627 article/10627v1"
+                            expected: "article/10627 article/10627v1"
                         article-figures-pdf:
                             path: /articles/00666/elife-00666-figures-v1.pdf
-                            expected: "articles/00666 article/00666 article/00666v1"
+                            expected: "article/00666 article/00666v1"
                         article-figure-supplement:
                             path: /articles/00666/elife-00666-fig2-figsupp1-v1.tif
-                            expected: "articles/00666 article/00666 article/00666v1"
+                            expected: "article/00666 article/00666v1"
                         appendix-figure-supplement:
                             path: /articles/18215/elife-18215-app2-fig1-figsupp2-v2.tif
-                            expected: "articles/18215 article/18215 article/18215v2"
+                            expected: "article/18215 article/18215v2"
                         # legacy, not supported: /articles/10627/elife-10627-fig1-v1-download.jpg
                         # legacy, not supported: /articles/10627/elife-10627-fig1-v1-972w.jpg
                 article-unversioned:
                     url: "^/articles/([0-9]+)/elife-([a-z-0-9]+)-(video|media)([0-9]+)\\.(.+)$"
-                    value: "articles/\\1 article/\\1/videos"
+                    value: "article/\\1 article/\\1/videos"
                     samples:
                         article-video:
                             path: /articles/34773/elife-34773-video2.mp4
-                            expected: "articles/34773 article/34773/videos"
+                            expected: "article/34773 article/34773/videos"
                         article-still:
                             path: /articles/07398/elife-07398-media1.jpg
-                            expected: "articles/07398 article/07398/videos"
+                            expected: "article/07398 article/07398/videos"
                         article-figure-video:
                             path: /articles/26866/elife-26866-fig3-video1.mp4
-                            expected: "articles/26866 article/26866/videos"
+                            expected: "article/26866 article/26866/videos"
     aws-alt:
         # have to specify this because otherwise configuration such as `fresh` inherited from defaults won't see the ec2: false in `aws:` and test_validation.py will fail for all of them?
         fresh:
@@ -1298,6 +1236,7 @@ bus:
             - bus-press-packages--{instance}
             - bus-metrics--{instance}
             - bus-profiles--{instance}
+            - bus-digests--{instance}
 
 search:
     domain: false
@@ -1659,8 +1598,8 @@ iiif:
                 timeout: 2000
             surrogate-keys:
                 article-id-versioned:
-                    url: "^/lax:([0-9]+)/elife-([a-z0-9-]+)-v([0-9]+)\\.(.+)$"
-                    value: "article/\\1 article/\\1v\\3"
+                    url: "^/lax[:/]([0-9]+)(?:/|%2F)elife-(?:[a-z0-9-]+)-v([0-9]+)\\.(?:.+)$"
+                    value: "article/\\1 article/\\1v\\2"
                     samples:
                         figure:
                             path: /lax:10627/elife-10627-fig1-v1.tif/full/1500,/0/default.jpg
@@ -1671,8 +1610,11 @@ iiif:
                         appendix-figure-supplement:
                             path: /lax:18215/elife-18215-app2-fig1-figsupp2-v2.tif
                             expected: "article/18215 article/18215v2"
+                        encoded-urls:
+                            path: /lax/18215%2Felife-18215-app2-fig1-figsupp2-v2.tif
+                            expected: "article/18215 article/18215v2"
                 article-id-unversioned:
-                    url: "^/lax:([0-9]+)/elife-([a-z-0-9]+)-(video|media)([0-9]+)\\.(.+)$"
+                    url: "^/lax[:/]([0-9]+)(?:/|%2F)elife-(?:[a-z-0-9]+)-(?:video|media)(?:[0-9]+)\\.(?:.+)$"
                     value: "article/\\1 article/\\1/videos"
                     samples:
                         video-still:
@@ -1683,6 +1625,9 @@ iiif:
                             expected: "article/07398 article/07398/videos"
                         article-figure-video-still:
                             path: /lax:26866/elife-26866-fig3-video1.jpg
+                            expected: "article/26866 article/26866/videos"
+                        encoded-urls:
+                            path: /lax/26866%2Felife-26866-fig3-video1.jpg
                             expected: "article/26866 article/26866/videos"
     aws-alt:
         standalone:
@@ -1866,6 +1811,37 @@ annotations:
         ram: 1024
         ports:
             1248: 80
+
+digests:
+    subdomain: digests
+    domain: false
+    repo: https://github.com/elifesciences/digests
+    formula-repo: https://github.com/elifesciences/digests-formula
+    aws:
+        ports:
+            - 22
+            - 80:
+                cidr-ip: 10.0.0.0/16 # access via VPC ip range only
+    aws-alt:
+        end2end: {}
+            #rds:
+            #    engine: postgres
+            #    storage: 5 # GB
+            #    backup-retention: 2 # days
+        continuumtest: {}
+            #rds:
+            #    engine: postgres
+            #    storage: 5 # GB
+            #    backup-retention: 2 # days
+        prod: {}
+            #rds:
+            #    engine: postgres
+            #    storage: 5 # GB
+            #    multi-az: true
+    vagrant:
+        ram: 1024
+        ports:
+            1290: 80
 
 evanthia-simpler-component:
     subdomain: evanthia-simpler-component

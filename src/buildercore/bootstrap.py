@@ -387,22 +387,26 @@ def update_stack(stackname, service_list=None, **kwargs):
     #    - ec2: deploys
     #    - s3, sqs, ...: infrastructure updates
     service_update_fns = OrderedDict([
-        ('ec2', update_ec2_stack),
-        ('s3', update_s3_stack),
-        ('sqs', update_sqs_stack),
+        ('ec2', (update_ec2_stack, ['concurrency', 'formula_revisions'])),
+        ('s3', (update_s3_stack, [])),
+        ('sqs', (update_sqs_stack, [])),
     ])
     service_list = service_list or service_update_fns.keys()
     ensure(utils.iterable(service_list), "cannot iterate over given service list %r" % service_list)
     context = context_handler.load_context(stackname)
-    for servicename, fn in subdict(service_update_fns, service_list).items():
-        fn(stackname, context, **kwargs)
+    for servicename, delegation in subdict(service_update_fns, service_list).items():
+        fn, additional_arguments_names = delegation
+        actual_arguments = {key: value for key, value in kwargs.items() if key in additional_arguments_names}
+        fn(stackname, context, **actual_arguments)
 
 def upload_master_builder_key(key):
+    old_public_key = "/root/.ssh/id_rsa.pub"
     private_key = "/root/.ssh/id_rsa"
     LOG.info("upload master builder key to %s", private_key)
     try:
         # NOTE: overwrites any existing master key on machine being updated
         fab_put(local_path=key, remote_path=private_key, use_sudo=True)
+        sudo("rm -f %s && chown root:root %s && chmod 600 %s" % (old_public_key, private_key, private_key))
     finally:
         key.close()
 
@@ -445,7 +449,7 @@ def upload_master_configuration(master_stack, master_configuration_data):
 
 @updates('ec2')
 @core.requires_active_stack
-def update_ec2_stack(stackname, context, concurrency=None, formula_revisions=None, **kwargs):
+def update_ec2_stack(stackname, context, concurrency=None, formula_revisions=None):
     """installs/updates the ec2 instance attached to the specified stackname.
 
     Once AWS has finished creating an EC2 instance for us, we need to install
@@ -506,11 +510,11 @@ def update_ec2_stack(stackname, context, concurrency=None, formula_revisions=Non
                 'BUILDER_TOPFILE': os.environ.get('BUILDER_TOPFILE', '')
             }
             # Vagrant's equivalent is 'init-vagrant-formulas.sh'
-            run_script('init-formulas.sh', formula_list, pdata['private-repo'], **envvars)
+            run_script('init-masterless-formulas.sh', formula_list, pdata['private-repo'], **envvars)
 
             # second pass to optionally update formulas to specific revisions
             for repo, formula, revision in formula_revisions or []:
-                run_script('update-master-formula.sh', repo, formula, revision)
+                run_script('update-masterless-formula.sh', repo, formula, revision)
 
         if is_master:
             # it is possible to be a masterless master server
