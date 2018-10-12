@@ -14,12 +14,10 @@ import logging
 LOG = logging.getLogger(__name__)
 
 @task
-def update(master_stackname=None):
-    "same as `cfn.update` but also removes any orphaned minion keys"
+def update_infrastructure(master_stackname=None):
+    "same as `cfn.update_infrastructure` but also removes any orphaned minion keys"
     master_stackname = master_stackname or core.find_master(utils.find_region())
-    bootstrap.update_stack(master_stackname, service_list=[
-        'ec2' # master-server should be a self-contained EC2 instance
-    ])
+    bootstrap.update_stack(master_stackname)
     bootstrap.remove_all_orphaned_keys(master_stackname)
 
 #
