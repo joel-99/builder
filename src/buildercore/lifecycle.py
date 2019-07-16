@@ -17,6 +17,9 @@ from .context_handler import load_context
 
 LOG = logging.getLogger(__name__)
 
+class EC2Timeout(RuntimeError):
+    pass
+
 def _node_id(node):
     name = core.tags2dict(node.tags)['Name']
     nid = core.parse_stackname(name, all_bits=True, idx=True).get('cluster_id', 1)
@@ -112,14 +115,26 @@ def start(stackname):
         [_rds_connection(stackname).start_db_instance(DBInstanceIdentifier=n) for n in rds_to_be_started]
 
     if ec2_to_be_started:
-        _wait_ec2_all_in_state(stackname, 'running', ec2_to_be_started)
-        call_while(
-            lambda: _some_node_is_not_ready(stackname),
-            interval=2,
-            timeout=120,
-            update_msg="waiting for nodes to complete boot",
-            done_msg="all nodes have public ips, are reachable via SSH and have completed boot"
-        )
+        def _wait_for_ec2_steady_state():
+            _wait_ec2_all_in_state(stackname, 'running', ec2_to_be_started)
+            call_while(
+                lambda: _some_node_is_not_ready(stackname),
+                interval=2,
+                timeout=120,
+                update_msg="waiting for nodes to complete boot",
+                done_msg="all nodes have public ips, are reachable via SSH and have completed boot",
+                exception_class=EC2Timeout
+            )
+        try:
+            _wait_for_ec2_steady_state()
+        except EC2Timeout:
+            # in case of botched boot and/or inability to
+            # access through SSH, try once to stop and
+            # start the instances again
+            _ec2_connection(stackname).instances.filter(InstanceIds=ec2_to_be_started).stop()
+            _wait_ec2_all_in_state(stackname, 'stopped', ec2_to_be_started)
+            _ec2_connection(stackname).instances.filter(InstanceIds=ec2_to_be_started).start()
+            _wait_for_ec2_steady_state(ec2_to_be_started)
     else:
         LOG.info("EC2 nodes are all running")
 
