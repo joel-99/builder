@@ -978,7 +978,7 @@ journal-cms:
             rds:
                 type: db.t2.medium
                 engine: MySQL
-                version: '5.7'
+                version: '5.7.23'
                 storage: 12 # GB
                 backup-retention: 2 # days
             ext:
